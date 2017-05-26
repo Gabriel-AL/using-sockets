@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Puissance Gab</title>
+        <style>
+        	body{
+        		background-color: black;
+        	}
+        	#canvas{
+        		text-align:center;
+        	}
+        </style>
+    </head>
+ 
+    <body>
+    	<div id="canvas"></div>
+    
+		<script src="https://pixijs.download/v4.5.2/pixi.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+	<script>
+	$(document).ready(function(){
+		var app = new PIXI.Application(window.innerWidth*0.5, window.innerHeight*0.8, {backgroundColor : 0x1099bb});
+document.getElementById("canvas").appendChild(app.view);
+		var circles = [];
+		var circlesC = [];
+		var txtTurn = [];
+		var msgView = false;
+		var myColor = 0xFFFFFF;
+		var myTurn = false;
+		var myRoom = 0;
+		var oColor = 0xFFFFFF;
+		var win = false;
+
+		rectMessage("Waiting for player2");
+		
+		
+		var socket = io.connect("http://localhost:3000");
+		socket.on('who are you', function(inc){
+			socket.emit('check in', '');
+			console.log("I am me");
+		});
+		
+		socket.on('createGame', function(tabData){
+			createMap(tabData["p1"]);
+			myColor = tabData["p1"]==socket.id ? 0xFF0000 : 0xADFF2F;
+			myRoom = tabData["idRoom"];
+			myTurn = tabData["p1"]==socket.id ? true:false;
+			oColor = tabData["p1"]==socket.id ?0xadFF2F: 0xFF0000;
+		});
+		
+		socket.on('hasPlayed',function(tabData){
+			if(tabData['player']!=socket.id){
+				otherPlayer(tabData['tile.i'], tabData['tile.j']);
+				changeTurn(true);
+			}
+		});
+		
+		socket.on('message', function(msg){
+			if(!win){
+				rectMessage(msg);
+			}
+		});
+		
+		socket.on('BrutalEnd', function(){
+			rectMessage("Player2 has left :'(");
+		});
+		
+			
+		function createMap(player){
+			msgView = false;
+			app.stage.removeChildren();
+			
+			for(var i = 0; i< 9; i++){
+				for(var j = 0; j<9; j++){
+					var sprcircle = createCircle("0xFFFFFF");
+					
+					sprcircle.x = ( (app.renderer.width/10)*j ) +30;
+					sprcircle.y = ((app.renderer.height/10)*i)+25;
+					
+					sprcircle.interactive = true;
+					sprcircle.buttonMode = true;
+					
+					sprcircle.on('pointerup', onButtonUp).on('pointerover', onButtonOver).on('pointerout',onButtonOut);
+					
+					app.stage.addChild(sprcircle);
+					
+					sprcircle.j = j;
+					sprcircle.i = i;
+					sprcircle.checked = false;
+					circles.push(sprcircle);
+				}	
+			}
+			
+			var styleT = new PIXI.TextStyle({
+				fontFamily: 'Arial',
+				fontSize: 16,
+				fontWeight: 'bold',
+				fill: '#ffffff',
+				stroke: '#ffffff',
+			});
+			
+			var txt = player==socket.id ? "My Turn" : "Their Turn";
+			var textM = new PIXI.Text(txt, styleT);
+			textM.x = 10;
+			textM.y = (app.renderer.height-26) ;
+			
+			txtTurn = textM;
+			app.stage.addChild(textM);
+			
+				
+		}
+		
+		function onButtonUp() {
+			if(myTurn && !this.checked){
+			    this.tint = myColor;
+			    this.checked = true;
+			    this.buttonMode = false;
+			    this.interactive = false;
+			    changeTurn(false);
+			    socket.emit('played', {"player":socket.id, "tile.j":this.j, "tile.i":this.i, "idRoom": myRoom});
+			    circlesC.push(this);
+			    checkWin();
+			}
+		}
+		
+		function otherPlayer(oI, oJ){
+			for(var cpt = 0; cpt<circles.length; cpt++){
+				if(circles[cpt]["i"]==oI && circles[cpt]["j"]==oJ){
+					circles[cpt].tint = oColor;
+					circles[cpt].checked = true;
+					circles[cpt].buttonMode= false;
+				}
+			}
+		}
+		
+		function onButtonOver(){
+			if(!this.checked){
+				this.tint = 0xFFA500;
+			}
+		}
+		
+		function onButtonOut(){
+			if(!this.checked){
+				this.tint = 0xFFFFFF;
+			}
+		}
+		
+		function checkWin(){
+			var cpt = 0;
+
+			while(!win && cpt < circlesC.length){
+				win = inLine(circlesC[cpt]);
+				cpt++;		
+			}
+			
+			if(win){
+				socket.emit("victory", myRoom);
+				rectMessage("You won !");	
+			}
+		}
+		
+		function inLine(circle){
+			var count = 0;
+			var minJ = (circle.j-3)<=0 ? 0 : circle.j-3;
+			var minI = (circle.i-3)<=0 ? 0 : circle.i-3;
+			var maxJ = (circle.j+3)>=8 ? 8 : circle.j+3;
+			var maxI = (circle.i+3)>=8 ? 8 : circle.i+3;
+
+			console.log("val i: "+minI+"/"+maxI+" ; valJ: "+minJ+"/"+maxJ);
+
+			/*column: i*/
+			for(var cpt = minI; cpt<=maxI; cpt++){
+				if(inCircleC(cpt , circle.j)){
+					count++;
+				}	
+				if(4<=count){
+					return true;
+				}
+			}
+
+			count = 0;
+			
+			/*row: j*/
+			for(var cpt = minJ; cpt<=maxJ; cpt++){
+				if(inCircleC(circle.i, cpt)){
+					count++;
+				}
+				if(4<=count){
+					return true;
+				}	
+			}
+
+			
+			count = 0
+			
+			/*diagonal \ */
+			for(var cpt = minJ; cpt<maxJ; cpt++){
+				if(minI+cpt > maxI){
+					continue;	
+				}
+				if(inCircleC(cpt, minI+cpt)){
+					count++;
+				}
+				if(count>=4){
+					return true;	
+				}
+			}
+			
+			/*diagonal / */
+			for(var cpt = minJ; cpt<maxJ; cpt++){
+				if(minI+cpt < 0){
+					continue;	
+				}
+				if(inCircleC(cpt, minI-cpt)){
+					count++;
+				}
+				if(count>=4){
+					return true;	
+				}
+			}
+
+			return false;
+		}
+		
+		function inCircleC(x, y){
+			for(var cpt=0; cpt<circlesC.length;cpt++){
+				if( (circlesC[cpt].i == y) && circlesC[cpt].j == x){
+					return true;	
+				}
+			}
+			return false;
+		}
+		
+		function changeTurn(boolT){
+			myTurn = boolT;
+			var txt = myTurn ? "My Turn" : "Their Turn";
+			txtTurn.text = txt;
+		}
+		
+		function createCircle(color){
+			var pcircle = new PIXI.Graphics();
+			pcircle.lineStyle(2,color, 1);
+			pcircle.beginFill(0xFFFFFF, 0.2);
+			pcircle.drawCircle( 0,  0, 25);
+			pcircle.endFill();
+			
+			pcircle.boundsPadding = 0;
+			var textcircle = pcircle.generateCanvasTexture();
+			
+			return new PIXI.Sprite(textcircle);
+		}
+		
+		function rectMessage(message){
+			if(!msgView){
+				
+				if(circles.length > 0){
+					opak = new PIXI.Graphics();
+					opak.lineStyle(0, 0xFFFFFF);
+					opak.beginFill(0x1099bb, 0.2);
+					opak.drawRect(0,0,app.renderer.width, app.renderer.height);
+					opak.endFill();
+					app.stage.addChild(opak);
+				}
+				
+				graphics = new PIXI.Graphics();
+				graphics.lineStyle(2, 0xFFFFFF);
+				graphics.beginFill(0xFFFFFF, 0.2);
+				graphics.drawRect(-2, app.renderer.height/4, app.renderer.width+3, 200);
+				graphics.endFill();
+				app.stage.addChild(graphics);
+				
+				var filtShad = new PIXI.filters.BlurFilter();
+				var shad = new PIXI.Graphics();
+				shad.lineStyle(2, 0xFFFFFF);
+				shad.drawRect(-2, app.renderer.height/4, app.renderer.width+2, 200);
+				shad.endFill();
+				shad.filters = [filtShad];
+				filtShad.blur = 4;
+				app.stage.addChild(shad);
+				
+				var styleT = new PIXI.TextStyle({
+					fontFamily: 'Arial',
+					fontSize: 36,
+					fontWeight: 'bold',
+					fill: '#ffffff',
+					stroke: '#ffffff',
+					align: 'center',
+					dropShadow: true,
+					dropShadowColor: '#ffffff',
+					dropShadowBlur:4,
+					dropShadowAngle: 0,
+					dropShadowDistance:0
+				});
+				
+				var textM = new PIXI.Text(message, styleT);
+				textM.anchor.x=0.5;
+				textM.x = (app.renderer.width/2);
+				textM.y = (app.renderer.height/2.5) ;
+				app.stage.addChild(textM);
+			}
+		}
+	});
+	</script>
+        <script>
+            var socket = io.connect('http://localhost:3000');
+        </script>
+    </body>
+</html>

@@ -5,7 +5,7 @@ var players = [];
 var nbRooms = 0;
 
 
-app.set('port', process.env.PORT || 3000);
+app.set('port', process.env.OPENSHIFT_NODEJS_PORT || 8080);
 app.set('view engine', 'ejs');
 
 var router = express.Router();
